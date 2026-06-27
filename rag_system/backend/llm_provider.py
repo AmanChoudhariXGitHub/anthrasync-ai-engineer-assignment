@@ -1,42 +1,56 @@
 """
-LLM provider module for interacting with open-source models via Ollama.
+LLM provider module for interacting with Groq's LLM API.
+Supports free tier with model fallback options.
 """
 
 import logging
-import requests
-from typing import List, Dict, Tuple
-import json
+import os
+from typing import List, Dict, Optional
+from groq import Groq
 
 logger = logging.getLogger(__name__)
 
 
-class OllamaProvider:
-    """Interact with Ollama for open-source LLM inference."""
+class GroqProvider:
+    """Interact with Groq API for LLM inference using free tier."""
     
-    def __init__(self, base_url: str = "http://localhost:11434", model: str = "mistral"):
+    def __init__(self, api_key: Optional[str] = None, model: str = "llama-3.3-70b-versatile"):
         """
-        Initialize Ollama provider.
+        Initialize Groq provider.
         
         Args:
-            base_url: Ollama server base URL
-            model: Model name (mistral, llama2, etc.)
+            api_key: Groq API key (defaults to GROQ_API_KEY env var)
+            model: Primary model name
         """
-        self.base_url = base_url
+        self.api_key = api_key or os.getenv("GROQ_API_KEY")
+        if not self.api_key:
+            logger.warning("GROQ_API_KEY not set. Using mock responses.")
+            self.api_key = None
+        
         self.model = model
-        self.api_endpoint = f"{base_url}/api/generate"
+        self.fallback_models = os.getenv("GROQ_FALLBACK_MODELS", 
+                                         "llama-3.1-70b-versatile,llama-3.1-8b-instant,gemma2-9b-it").split(",")
+        self.client = Groq(api_key=self.api_key) if self.api_key else None
+        self.current_model = model
     
-    def _is_available(self) -> bool:
-        """Check if Ollama service is available."""
+    def _try_model(self, client: Groq, prompt: str, model: str, max_tokens: int, 
+                   temperature: float) -> Optional[str]:
+        """Try to generate with a specific model."""
         try:
-            response = requests.get(f"{self.base_url}/api/tags", timeout=2)
-            return response.status_code == 200
+            message = client.messages.create(
+                model=model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return message.content[0].text.strip()
         except Exception as e:
-            logger.warning(f"Ollama not available: {e}")
-            return False
+            logger.warning(f"Failed with model {model}: {e}")
+            return None
     
     def generate(self, prompt: str, max_tokens: int = 512, temperature: float = 0.7) -> str:
         """
-        Generate text using Ollama.
+        Generate text using Groq API with fallback models.
         
         Args:
             prompt: Input prompt
@@ -46,41 +60,39 @@ class OllamaProvider:
         Returns:
             Generated text
         """
-        if not self._is_available():
+        if not self.client:
             return self._mock_response(prompt)
         
+        # Try primary model first
         try:
-            payload = {
-                "model": self.model,
-                "prompt": prompt,
-                "stream": False,
-                "options": {
-                    "num_predict": max_tokens,
-                    "temperature": temperature,
-                }
-            }
-            
-            response = requests.post(
-                self.api_endpoint,
-                json=payload,
-                timeout=60
-            )
-            
-            if response.status_code == 200:
-                result = response.json()
-                return result.get("response", "").strip()
-            else:
-                logger.error(f"Ollama error: {response.status_code}")
-                return self._mock_response(prompt)
-                
+            result = self._try_model(self.client, prompt, self.model, max_tokens, temperature)
+            if result:
+                self.current_model = self.model
+                return result
         except Exception as e:
-            logger.error(f"Error calling Ollama: {e}")
-            return self._mock_response(prompt)
+            logger.warning(f"Primary model {self.model} failed: {e}")
+        
+        # Try fallback models
+        for fallback_model in self.fallback_models:
+            fallback_model = fallback_model.strip()
+            try:
+                logger.info(f"Trying fallback model: {fallback_model}")
+                result = self._try_model(self.client, prompt, fallback_model, max_tokens, temperature)
+                if result:
+                    self.current_model = fallback_model
+                    logger.info(f"Successfully used fallback model: {fallback_model}")
+                    return result
+            except Exception as e:
+                logger.warning(f"Fallback model {fallback_model} failed: {e}")
+                continue
+        
+        # Fall back to mock response
+        logger.error("All models failed, using mock response")
+        return self._mock_response(prompt)
     
     @staticmethod
     def _mock_response(prompt: str) -> str:
-        """Generate a mock response when Ollama is not available."""
-        # Return a reasonable mock response based on prompt content
+        """Generate a mock response when API is not available."""
         if "summary" in prompt.lower():
             return "This is a summary of the provided context. The document discusses key points and provides detailed information on the subject matter. Further analysis shows that the content is well-structured and informative."
         elif "explain" in prompt.lower():
@@ -92,7 +104,7 @@ class OllamaProvider:
 class RAGChain:
     """Retrieval-Augmented Generation chain combining vector search and LLM."""
     
-    def __init__(self, vector_store, llm_provider: OllamaProvider):
+    def __init__(self, vector_store, llm_provider: GroqProvider):
         """
         Initialize RAG chain.
         

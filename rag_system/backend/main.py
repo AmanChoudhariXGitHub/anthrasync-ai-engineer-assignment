@@ -14,7 +14,7 @@ import tempfile
 
 from document_processor import DocumentProcessor
 from vector_store import VectorStore
-from llm_provider import OllamaProvider, RAGChain
+from llm_provider import GroqProvider, RAGChain
 from evaluation import RAGEvaluator
 
 # Configure logging
@@ -86,10 +86,10 @@ async def startup_event():
     embedding_model = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
     vector_store = VectorStore(persist_dir=persist_dir, model_name=embedding_model)
     
-    # Initialize LLM provider
-    ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    ollama_model = os.getenv("OLLAMA_MODEL", "mistral")
-    llm_provider = OllamaProvider(base_url=ollama_base_url, model=ollama_model)
+    # Initialize LLM provider (using Groq API)
+    groq_api_key = os.getenv("GROQ_API_KEY")
+    groq_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    llm_provider = GroqProvider(api_key=groq_api_key, model=groq_model)
     
     # Initialize RAG chain
     rag_chain = RAGChain(vector_store, llm_provider)
