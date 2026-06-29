@@ -10,9 +10,11 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'v0 App',
-  description: 'Created with v0',
+  title: 'Enterprise Knowledge Assistant - Production RAG System',
+  description: 'Production-ready Retrieval-Augmented Generation system with Groq free LLM APIs, ChromaDB vector storage, and semantic search. Zero cost, maximum capability.',
   generator: 'v0.app',
+  keywords: ['RAG', 'LLM', 'Groq', 'AI Engineer', 'Knowledge Assistant', 'Vector Database'],
+  authors: [{ name: 'Aman Choudhari', url: 'https://github.com/AmanChoudhariXGitHub' }],
   icons: {
     icon: [
       {
@@ -29,6 +31,11 @@ export const metadata: Metadata = {
       },
     ],
     apple: '/apple-icon.png',
+  },
+  openGraph: {
+    title: 'Enterprise Knowledge Assistant',
+    description: 'Production RAG system with Groq LLM APIs',
+    type: 'website',
   },
 }
 
